@@ -1,0 +1,26 @@
+# LaTeX
+*.aux
+*.fdb_latexmk
+*.fls
+*.log
+*.out
+*.synctex.gz
+*.toc
+*.pdf
+relatório.*
+
+# Dependencies
+node_modules/
+
+# Reproducible / transient artifacts
+Main_js/input.json
+Main_js/witness.wtns
+Main_js/proof.json
+Main_js/public.json
+
+# Circom compiler (not part of project)
+circom/
+
+# Leftover experiments
+matriz_3x3_floats_6dec.py
+Pinocchio_*.*
