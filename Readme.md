@@ -1,3 +1,7 @@
+# ZK-MNIST: Zero-Knowledge Proof para Inferência de Redes Neurais com Circom
+
+Sistema de prova de conhecimento zero (zk-SNARK) que verifica a classificação correta de dígitos MNIST por uma MLP de 3 camadas (784→128→64→10) sem revelar os pesos, vieses ou a imagem de entrada. Apenas o dígito previsto (`predicted_class`) é público; todos os 110.170 parâmetros restantes são privados. Implementado em Circom 2.1.6 com o protocolo Groth16 sobre a curva BN254.
+
 ## Controle de Escala
 
 Como redes neurais usam números de ponto flutuante (decimais) e o Circom só aceita inteiros, o script Python multiplicou todos os parâmetros por 1.000.000 ($10^6$) antes de exportar, mantendo precisão de ~6 casas decimais.
