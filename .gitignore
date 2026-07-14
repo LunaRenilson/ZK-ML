@@ -20,7 +20,10 @@ Main_js/public.json
 
 # Circom compiler (not part of project)
 circom/
+relatorio/
 
 # Leftover experiments
 matriz_3x3_floats_6dec.py
 Pinocchio_*.*
+*.zkey
+*.ptau
