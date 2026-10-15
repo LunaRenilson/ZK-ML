@@ -1,51 +1,51 @@
-# ZK-MNIST: Zero-Knowledge Proof para Inferência de Redes Neurais com Circom
+# ZK-MNIST: Zero-Knowledge Proof for Neural Network Inference with Circom
 
-Sistema de prova de conhecimento zero (zk-SNARK) que verifica a classificação correta de dígitos MNIST por uma MLP de 3 camadas (784→128→64→10) sem revelar os pesos, vieses ou a imagem de entrada. Apenas o dígito previsto (`predicted_class`) é público; todos os 110.170 parâmetros restantes são privados. Implementado em Circom 2.1.6 com o protocolo Groth16 sobre a curva BN254.
+Zero-knowledge proof system (zk-SNARK) that verifies the correct classification of MNIST digits by a 3-layer MLP (784→128→64→10) without revealing the weights, biases, or input image. Only the predicted digit (`predicted_class`) is public; all remaining 110,170 parameters are private. Implemented in Circom 2.1.6 with the Groth16 protocol on the BN254 curve.
 
-## Controle de Escala
+## Scale Control
 
-Como redes neurais usam números de ponto flutuante (decimais) e o Circom só aceita inteiros, o script Python multiplicou todos os parâmetros por 1.000.000 ($10^6$) antes de exportar, mantendo precisão de ~6 casas decimais.
+Since neural networks use floating-point numbers (decimals) and Circom only accepts integers, the Python script multiplied all parameters by 1,000,000 ($10^6$) before exporting, maintaining a precision of ~6 decimal places.
 
-Quando a rede neural faz a operação $X×W+B$:
-1. O input X está na escala $10^6$.
-2. O peso W está na escala $10^6$.
-3. A multiplicação $X×W$ joga o resultado para a escala $10^{12}$.  
+When the neural network performs the $X \cdot W + B$ operation:
+1. Input X is on the $10^6$ scale.
+2. Weight W is on the $10^6$ scale.
+3. The multiplication $X \cdot W$ scales the result up to $10^{12}$.
 
-Se deixarmos o número crescer assim a cada camada, ele rapidamente estoura o tamanho máximo permitido. Por isso, após a ativação ReLU, o código divide o valor por 1.000.000 para fazê-lo voltar para a escala $10^6$, deixando-o pronto para a próxima camada.
+If we allow the number to grow like this at each layer, it quickly exceeds the maximum allowed size. Therefore, after the ReLU activation, the code divides the value by 1,000,000 to scale it back down to $10^6$, preparing it for the next layer.
 
-## Uso de `<--` ao invés de `<==`?
+## Why Use `<--` Instead of `<==`?
 
-No Circom, a seta tradicional `<==` faz duas coisas ao mesmo tempo:
+In Circom, the traditional `<==` arrow performs two actions simultaneously:
 
-1. Atribui um valor a uma variável
-2. cria uma restrição matemática (uma equação que precisa ser provada).
+1. Assigns a value to a variable
+2. Creates a mathematical constraint (an equation that must be proven).
 
-O problema é que o sistema R1CS não sabe fazer divisão inteira (`\`) nem resto de divisão (`%`) diretamente. Ele só entende somas, subtrações e multiplicações simples.
+The issue is that the R1CS system cannot perform integer division (`\`) or modulo remainder (`%`) directly. It only understands simple additions, subtractions, and multiplications.
 
-Se você tentássemos escrever `out <== relu_val \ 1000000;`, o compilador do Circom daria um erro na hora. Para contornar isso, o operador <-- apenas calcula o valor (ele diz para o gerador de testemunhas: "faça essa conta de divisão normal e guarde o resultado aqui"). 
+If you tried to write `out <== relu_val \ 1000000;`, the Circom compiler would throw an error immediately. To bypass this, the `<--` operator merely computes the value (it instructs the witness generator: "perform this standard division calculation and store the result here").
 
-Para gerar a restrição em cima dessa operação e evitar que um provador malicioso falsifique a multiplicação, adicionamos a restrição: `relu_val === out * 1000000 + rem;`
+To generate the constraint on top of this operation and prevent a malicious prover from forging the multiplication, we add the constraint: `relu_val === out * 1000000 + rem;`
 
-Se o provador tentar inventar um valor falso para out ou para rem, a igualdade se torna falsa, a restrição quebra, e a prova criptográfica é rejeitada na hora.
+If the prover tries to invent a false value for `out` or `rem`, the equality becomes false, the constraint fails, and the cryptographic proof is immediately rejected.
 
 ## ReLU
 
-O objetivo dessa camada é aplicar a equação dos neurônios: $$Y = \text{ReLU}(X \cdot W + B)$$
+The objective of this layer is to apply the neuron equation: $$Y = \text{ReLU}(X \cdot W + B)$$
 
-Sinais adotados para esse template:
-- `in[n_in]`: Um vetor contendo as ativações vindas da camada anterior.
-- `weights[n_out][n_in]`: Matriz de pesos trasposta. Assim, `weight[i]` possui todos os pesos conectados ao neurônio `i`
-- `bias[n_out]`: Vetor de viéses, um para cada neurônio
-- `out[n_out]`: Vetor de saídas após o ReLU
+Signals adopted for this template:
+- `in[n_in]`: A vector containing activations from the previous layer.
+- `weights[n_out][n_in]`: Transposed weight matrix. Thus, `weight[i]` contains all weights connected to neuron `i`.
+- `bias[n_out]`: Bias vector, one for each neuron.
+- `out[n_out]`: Output vector after ReLU.
 
-Além disso, outro detalhe importante é a necessidade do vetor `mult[n_out][n_in]` para guardar as multiplicações intermediárias, pois o circom não aceita operações não lineares
+In addition, another important detail is the need for the `mult[n_out][n_in]` vector to store intermediate multiplications, as Circom does not accept non-linear operations directly.
 
-## Private e public inputs esperados no input.json
+## Private and Public Inputs Expected in input.json
 
-**Público:** 
-- predicted_class (input de main via component main {public [predicted_class]})
+**Public:**
+- predicted_class (input of main via `component main {public [predicted_class]}`)
 
-**Privados:**
+**Private:**
 - in[784]
 - weights_1[128][784]
 - bias_1[128]
@@ -71,7 +71,7 @@ labels: 395911
 
 ---
 
-Before creating the proof, we need to **calculate all the signals of the circuit** that match all the constraints of the circuit: 
+Before creating the proof, we need to **calculate all the signals of the circuit** that match all the constraints of the circuit:
 `node generate_witness.js multiplier2.wasm input.json witness.wtns`, which results in:
 ```
 Entrando na camada 1 (DenseReLU)...
@@ -80,103 +80,102 @@ Entrando na camada 2 (DenseReLU)...
 Maior valor em DenseReLU:  2304239438727
 Entrando na camada 3 (DenseLinear)...
 Maior valor em DenseLinear:  3959687853400
-Entrando na verificaÃ§Ã£o do ArgMax...
+Entrando na verificação do ArgMax...
 predicted_class:  7
 ```
 
 ---
 
-## Explicação Detalhada de Cada Comando
+## Detailed Explanation of Each Command
 
-### FASE I: Compilação e Execução Local (O Grafo e os Dados)
+### PHASE I: Compilation and Local Execution (The Graph and Data)
 
 **1. `circom Main.circom --r1cs --wasm --sym --c`**
 
-- **O que faz:** Traduz o código estrutural em Circom para um sistema de equações matemáticas.
-- **Dependência:** Estritamente do código/arquitetura. Ele não sabe qual imagem você vai rodar e nem quais são os pesos finais. Se você alterar um único neurônio da rede, precisará rodar esse comando de novo.
+- **What it does:** Translates structural Circom code into a system of mathematical equations.
+- **Dependency:** Strictly dependent on the code/architecture. It does not know which image you will run or what the final weights are. If you modify a single neuron in the network, you will need to re-run this command.
 
 **2. `node generate_witness.js Main.wasm input.json witness.wtns`**
 
-- **O que faz:** Executa a inferência da rede neural propriamente dita dentro do motor WebAssembly. Ele calcula o valor exato de cada multiplicação e soma da sua rede para aquela imagem específica.
-- **Dependência:** Do código e do Input completo (Pesos + Imagem). Cada vez que você for classificar uma imagem nova, ou se mudar os pesos da rede, você precisará gerar um witness.wtns novo.
+- **What it does:** Executes the neural network inference itself inside the WebAssembly engine. It calculates the exact value of every multiplication and addition in your network for that specific image.
+- **Dependency:** Dependent on the code and the complete Input (Weights + Image). Every time you classify a new image, or if you change the network weights, you will need to generate a new `witness.wtns`.
 
-### FASE II: Trusted Setup - Fase 1 (Universal / Independente)
+### PHASE II: Trusted Setup - Phase 1 (Universal / Independent)
 
-> **Nota:** Os passos 3, 4 e 5 fazem parte da "Fase 1" do Trusted Setup. Eles são universais. Você pode baixar esses arquivos prontos da internet (da comunidade Ethereum, por exemplo) e nunca precisar executá-los na mão, pois eles não sabem nada sobre redes neurais.
+> **Note:** Steps 3, 4, and 5 are part of "Phase 1" of the Trusted Setup. They are universal. You can download these files pre-generated from the internet (e.g., from the Ethereum community) and never need to run them manually, as they contain no information about neural networks.
 
 **3. `snarkjs powersoftau new bn128 20 pot20_0000.ptau -v`**
 
-- **O que faz:** Cria um arquivo de potências de Tau inicial usando a curva elíptica bn128. O número 20 indica a magnitude do circuito ($2^{20} = 1.048.576$ restrições matemáticas máximas). Como a sua rede gerou cerca de 166 mil restrições, o tamanho 20 comporta o seu circuito perfeitamente com folga.
-- **Dependência:** Universal. Não depende do seu código e nem do seu input.
+- **What it does:** Creates an initial Powers of Tau file using the bn128 elliptic curve. The number 20 specifies the circuit magnitude ($2^{20} = 1,048,576$ maximum mathematical constraints). Since your network generated around 166,000 constraints, size 20 comfortably accommodates your circuit with plenty of margin.
+- **Dependency:** Universal. Does not depend on your code or your input.
 
 **4. `snarkjs powersoftau contribute pot20_0000.ptau pot20_0001.ptau ...`**
 
-- **O que faz:** Adiciona uma "contribuição" de entropia (aleatoriedade). Você digita caracteres aleatórios no teclado para gerar um segredo criptográfico que será destruído logo em seguida (conhecido como Toxic Waste).
-- **Dependência:** Universal. (Nota: no seu comando original havia um pequeno erro de digitação de nome de arquivo pot12, o correto para manter a consistência é usar pot20 em toda a cadeia).
+- **What it does:** Adds an entropy (randomness) "contribution". You type random characters on the keyboard to generate a cryptographic secret that will be destroyed immediately afterward (known as Toxic Waste).
+- **Dependency:** Universal. (Note: in your original command there was a minor typo in a filename referencing `pot12`; for consistency, `pot20` should be used throughout the chain).
 
 **5. `snarkjs powersoftau prepare phase2 pot20_0001.ptau pot20_final.ptau -v`**
 
-- **O que faz:** Pega o arquivo de aleatoriedade acumulada, realiza computações baseadas em transformadas rápidas de Fourier e sela a Fase 1, gerando o pot20_final.ptau.
-- **Dependência:** Universal.
+- **What it does:** Takes the accumulated randomness file, performs computations based on Fast Fourier Transforms (FFT), and seals Phase 1, generating `pot20_final.ptau`.
+- **Dependency:** Universal.
 
-### FASE III: Trusted Setup - Fase 2 (Específica do Circuito)
+### PHASE III: Trusted Setup - Phase 2 (Circuit-Specific)
 
 **6. `snarkjs groth16 setup Main.r1cs pot20_final.ptau Main_0000.zkey`**
 
-- **O que faz:** Pega o espaço matemático gigante e universal (pot20_final.ptau) e o "recorta" cirurgicamente para encaixar exatamente no formato das restrições da sua rede neural (Main.r1cs). Ele gera a primeira chave de prova (.zkey).
-- **Dependência:** Do Circuito/Código. Não depende do input.
+- **What it does:** Takes the giant, universal mathematical space (`pot20_final.ptau`) and surgically "trims" it to fit the exact constraint structure of your neural network (`Main.r1cs`). It generates the initial proving key (`.zkey`).
+- **Dependency:** Dependent on the Circuit/Code. Does not depend on input.
 
 **7. `snarkjs zkey contribute Main_0000.zkey Main_0001.zkey ...`**
 
-- **O que faz:** Adiciona uma nova camada de aleatoriedade humana, mas agora especificamente direcionada para a chave da sua rede neural. Isso garante que nem mesmo quem criou o ecossistema original consiga falsificar uma prova para o seu circuito.
-- **Dependência:** Do Circuito/Código.
+- **What it does:** Adds another layer of human randomness, but now specifically targeted at your neural network's key. This guarantees that not even the creator of the original setup can forge a proof for your circuit.
+- **Dependency:** Dependent on the Circuit/Code.
 
 **8. `snarkjs zkey export verificationkey Main_0001.zkey verification_key.json`**
 
-- **O que faz:** Pega a chave de criptografia consolidada e extrai dela apenas a parte pública necessária para realizar checagens (a chave de verificação). Esse arquivo é minúsculo e é ele que será enviado para o cliente ou para um Smart Contract na blockchain.
-- **Dependência:** Do Circuito/Código.
+- **What it does:** Takes the consolidated cryptographic key and extracts only the public portion required to perform verifications (the verification key). This file is tiny and is what gets sent to the client or deployed to a blockchain Smart Contract.
+- **Dependency:** Dependent on the Circuit/Code.
 
-### FASE IV: O Ecossistema de Prova (Operação em Tempo de Execução)
+### PHASE IV: Proving Ecosystem (Runtime Operation)
 
 **9. `snarkjs groth16 prove Main_0001.zkey witness.wtns proof.json public.json`**
 
-- **O que faz:** Pega a história da computação da sua rede neural (witness.wtns), mistura com a chave de prova do circuito e aplica os fatores de cegamento (blinding factors do artigo do Pinocchio). Ele cospe dois arquivos: a prova criptográfica ultra-compacta (proof.json) e os inputs públicos (public.json, que contém apenas o seu predicted_class).
-- **Dependência:** Do Input (via Witness). É executado pelo Provedor toda vez que uma nova inferência precisa ser provada.
+- **What it does:** Takes the execution history of your neural network (`witness.wtns`), combines it with the circuit proving key, and applies blinding factors (from the Pinocchio protocol paper). It outputs two files: the ultra-compact cryptographic proof (`proof.json`) and the public inputs (`public.json`, containing only your `predicted_class`).
+- **Dependency:** Dependent on Input (via Witness). Executed by the Prover every time a new inference needs to be proven.
 
 **10. `snarkjs groth16 verify verification_key.json public.json proof.json`**
 
-- **O que faz:** O Verificador pega a chave pública do circuito, a classe que você diz ter encontrado e o arquivo de prova. Ele roda o pareamento de curvas elípticas. Se retornar OK, a matemática garante que você rodou a rede com a imagem e os pesos corretos.
-- **Dependência:** Apenas da Prova e do Input Público. Essa etapa roda em milissegundos e não tem acesso aos pesos privados da rede e nem à imagem original.
+- **What it does:** The Verifier takes the circuit's verification key, the claimed class, and the proof file. It runs elliptic curve pairings. If it returns OK, mathematics guarantees that you ran the network with the correct image and weights.
+- **Dependency:** Dependent only on the Proof and Public Input. This step executes in milliseconds and has no access to private network weights or the original image.
 
 ---
 
-## O que acontece ao Falsificar resultado da rede?
+## What Happens When Forging Network Results?
 
-Isso dependerá da forma como o resultado foi falsificado. Aqui, abordaremos dois cenários distintos.
+This depends on how the result was forged. Here we cover two distinct scenarios.
 
-### Cenário A: O Ataque de Alteração do Input Público
+### Scenario A: Public Input Modification Attack
 
-Este é o principal vetor que a Etapa 10 intercepta. Imagine que o provador malicioso decida jogar de forma limpa no início:
+This is the main attack vector intercepted by Step 10. Imagine a malicious prover initially plays clean:
 
-- Ele insere a imagem do dígito "5" e coloca "predicted_class": "5" no seu JSON.
-- A Etapa 2 roda perfeitamente e gera a testemunha legítima.
-- A Etapa 9 gera um proof.json válido e um arquivo public.json contendo o valor ["5"].
-- Antes de enviar os arquivos para o Verificador, o provador abre o arquivo public.json manualmente com um bloco de notas e altera o valor de "5" para "3".
+- Inserts the digit "5" image and sets `"predicted_class": "5"` in the JSON.
+- Step 2 runs perfectly and generates a legitimate witness.
+- Step 9 generates a valid `proof.json` and a `public.json` containing the value `["5"]`.
+- Before sending files to the Verifier, the prover manually opens `public.json` in a text editor and changes "5" to "3".
 
-Quando o Verificador executa a Etapa 10, ele pega a prova (que foi criptografada matematicamente baseada no número 5) e tenta casá-la com o input público adulterado (o número 3) usando o emparelhamento de curvas elípticas (pairing). A igualdade criptográfica não vai bater por causa de um único dígito, e o comando retornará Verification failed
+When the Verifier runs Step 10, it takes the proof (cryptographically calculated based on number 5) and attempts to match it against the tampered public input (number 3) via elliptic curve pairing. The cryptographic equality fails due to a single mismatching digit, returning "Verification failed".
 
-**Resultado:** `[ERROR] snarkJS: Invalid proof`
+**Result:** `[ERROR] snarkJS: Invalid proof`
 
+### Scenario B: Modification of input.json (Weights, Image Pixels, or predicted_class)
 
-### Cenário B: Alteração do input.json (Pesos, pixels da imagem e predicted_class)
+(Example: The network processes the digit "5", but you force `"predicted_class": "3"` inside the JSON)
 
-(Exemplo: A rede processa o dígito "5", mas você força no JSON que a predicted_class é "3")
+The workflow will halt at **Step 2 (Witness Generation)**:
 
-O fluxo travará na **Etapa 2 (Geração do Witness)**:
+When running `node generate_witness.js...`, the Circom engine processes pixel inputs, calculates that the highest score corresponds to neuron "5", but observes that the provided `predicted_class` was "3". Since strict constraints (`===`) are enforced in the circuit, the witness calculator detects a mathematical violation and throws a constraint failure error (e.g., `Assert Failed`), halting execution immediately.
 
-Quando o comando `node generate_witness.js...` for executado, o motor do Circom vai processar os pixels, calcular que o maior score era do neurônio "5", mas verá que o predicted_class fornecido foi "3". Como no circuito nós usamos restrições estritas (`===`), o calculador de testemunhas vai detectar a violação matemática e retornará um erro de constraint (ex: `Constraint failed`), interrompendo a execução imediatamente.
-
-**Saída resultate**: 
+**Resulting Output:**
 ```
 Entrando na camada 1 (DenseReLU)...
 Maior valor em DenseReLU:  564307073262
@@ -184,7 +183,7 @@ Entrando na camada 2 (DenseReLU)...
 Maior valor em DenseReLU:  2304239438727
 Entrando na camada 3 (DenseLinear)...
 Maior valor em DenseLinear:  3959687853400
-Entrando na verificaÃ§Ã£o do ArgMax...
+Entrando na verificação do ArgMax...
 /l/disk0/renilson/projects/033/Main_js/witness_calculator.js:166
                     throw new Error(err);
                           ^
@@ -201,4 +200,5 @@ Error in template MNIST_11 line: 206
 
 Node.js v22.21.0
 ```
-**Conclusão:** O arquivo `witness.wtns` sequer será gerado. Você não conseguirá nem chegar nas etapas 9 e 10, o que prova que o seu circuito é perfeitamente seguro contra outputs falsificados.
+
+**Conclusion:** The `witness.wtns` file will not even be generated. You will not be able to proceed to Steps 9 and 10, proving that your circuit is completely secure against forged outputs.
